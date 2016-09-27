@@ -74,7 +74,7 @@ namespace UnityStandardAssets.Characters.FirstPerson
         [Serializable]
         public class AdvancedSettings
         {
-            public float groundCheckDistance = 0.01f; // distance for checking if the controller is grounded ( 0.01f seems to work best for this )
+            public float groundCheckDistance = 0.1f; // distance for checking if the controller is grounded ( 0.01f seems to work best for this )
             public float stickToGroundHelperDistance = 0.5f; // stops the character
             public float slowDownRate = 20f; // rate at which the controller comes to a stop when there is no input
             public bool airControl; // can the user control the direction that is being moved in the air
@@ -92,8 +92,8 @@ namespace UnityStandardAssets.Characters.FirstPerson
         private Rigidbody m_RigidBody;
         private CapsuleCollider m_Capsule;
         private float m_YRotation;
-        private Vector3 m_GroundContactNormal;
-        private bool m_Jump, m_PreviouslyGrounded, m_Jumping, m_IsGrounded;
+        private Vector3 m_GroundContactNormal, m_WallContactNormal, m_DirectionToWall;
+        private bool m_Jump, m_PreviouslyGrounded, m_Jumping, m_IsGrounded, m_OnWall, m_PreviouslyOnWall;
 
 
         public Vector3 Velocity
@@ -142,7 +142,6 @@ namespace UnityStandardAssets.Characters.FirstPerson
             }
         }
 
-
         private void FixedUpdate()
         {
             GroundCheck();
@@ -164,18 +163,33 @@ namespace UnityStandardAssets.Characters.FirstPerson
                 }
             }
 
-            if (m_IsGrounded)
+            if (m_IsGrounded || m_OnWall)
             {
-                m_RigidBody.drag = 5f;
+                if (m_IsGrounded)
+                {
+                    m_RigidBody.drag = 5f;
+                }
+                else
+                {
+                    m_RigidBody.drag = 1f;
+                }
 
                 if (m_Jump)
                 {
-                    m_RigidBody.drag = 0f;
-                    m_RigidBody.velocity = new Vector3(m_RigidBody.velocity.x, 0f, m_RigidBody.velocity.z);
-                    m_RigidBody.AddForce(new Vector3(0f, movementSettings.JumpForce, 0f), ForceMode.Impulse);
+                    m_RigidBody.drag = 0f; 
+                    if(m_IsGrounded)
+                    {
+                        m_RigidBody.velocity = new Vector3(m_RigidBody.velocity.x, 0f, m_RigidBody.velocity.z);
+                        m_RigidBody.AddForce(new Vector3(0f, movementSettings.JumpForce, 0f), ForceMode.Impulse);
+                    }
+                    else
+                    {
+                        Debug.Log("Attempting Wall Jump...");
+                        Vector3 jumpDir = (m_WallContactNormal + Vector3.up).normalized;
+                        m_RigidBody.AddForce(movementSettings.JumpForce * jumpDir, ForceMode.Impulse);
+                    }
                     m_Jumping = true;
                 }
-
                 if (!m_Jumping && Mathf.Abs(input.x) < float.Epsilon && Mathf.Abs(input.y) < float.Epsilon && m_RigidBody.velocity.magnitude < 1f)
                 {
                     m_RigidBody.Sleep();
@@ -213,7 +227,6 @@ namespace UnityStandardAssets.Characters.FirstPerson
                 }
             }
         }
-
 
         private Vector2 GetInput()
         {
@@ -267,5 +280,60 @@ namespace UnityStandardAssets.Characters.FirstPerson
                 m_Jumping = false;
             }
         }
+
+        void OnCollisionEnter(Collision col)
+        {
+            if (col.gameObject.CompareTag("Wall"))
+            {
+                m_Jumping = false;
+                m_OnWall = true;
+                Debug.Log("Hit Wall " + col.gameObject.name);
+                Vector3 normal = Vector3.zero;
+                foreach (ContactPoint contact in col.contacts)
+                {
+                    normal += contact.normal;
+                }
+                m_WallContactNormal = normal.normalized;
+            }
+        }
+
+        void OnCollisionExit(Collision col)
+        {
+            if (col.gameObject.CompareTag("Wall"))
+            {
+                m_OnWall = false;
+                Debug.Log("Left Wall " + col.gameObject.name);
+                m_WallContactNormal = Vector3.up;
+            }
+        }
+        
+        /*
+        private void WallCheck()
+        {
+            m_PreviouslyOnWall = m_OnWall;
+            RaycastHit hitInfo;
+            if (Physics.SphereCast(transform.position, m_Capsule.radius * (1.0f - advancedSettings.shellOffset), Vector3.ProjectOnPlane(m_RigidBody.velocity, Vector3.up).normalized, out hitInfo,
+                                   ((m_Capsule.height/2f) - m_Capsule.radius) + advancedSettings.groundCheckDistance, Physics.AllLayers, QueryTriggerInteraction.Ignore)
+                                   && hitInfo.normal != Vector3.up && hitInfo.normal != Vector3.down)
+            {
+                m_OnWall = true;
+                m_WallContactNormal = hitInfo.normal;
+                m_DirectionToWall = Vector3.ProjectOnPlane(hitInfo.point - transform.position, Vector3.up).normalized;
+                Debug.Log("Wall Collision Detected");
+
+            }
+            else if (m_OnWall && !(Physics.SphereCast(transform.position, m_Capsule.radius * (1.0f - advancedSettings.shellOffset), m_DirectionToWall, out hitInfo,
+                                   ((m_Capsule.height / 2f) - m_Capsule.radius) + advancedSettings.groundCheckDistance, Physics.AllLayers, QueryTriggerInteraction.Ignore)
+                                   && m_WallContactNormal != Vector3.up && m_WallContactNormal != Vector3.down))
+            {
+                m_OnWall = false;
+                Debug.Log("Left Wall");
+                m_WallContactNormal = Vector3.up;
+            }
+            if(!m_PreviouslyOnWall && m_OnWall && m_Jumping)
+            {
+                m_Jumping = false;
+            }
+        }*/
     }
 }

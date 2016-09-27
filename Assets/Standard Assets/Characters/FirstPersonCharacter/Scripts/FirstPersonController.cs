@@ -13,6 +13,7 @@ namespace UnityStandardAssets.Characters.FirstPerson
         [SerializeField] private bool m_IsWalking;
         [SerializeField] private float m_WalkSpeed;
         [SerializeField] private float m_RunSpeed;
+        [SerializeField] private float m_MaxRunSpeed;
         [SerializeField] [Range(0f, 1f)] private float m_RunstepLenghten;
         [SerializeField] private float m_JumpSpeed;
         [SerializeField] private float m_StickToGroundForce;
@@ -104,28 +105,56 @@ namespace UnityStandardAssets.Characters.FirstPerson
             Physics.SphereCast(transform.position, m_CharacterController.radius, Vector3.down, out hitInfo,
                                m_CharacterController.height/2f, Physics.AllLayers, QueryTriggerInteraction.Ignore);
             desiredMove = Vector3.ProjectOnPlane(desiredMove, hitInfo.normal).normalized;
+            if(hitInfo.normal != Vector3.up && hitInfo.normal != Vector3.zero)
+                Debug.Log("hitInfo Normal: " + hitInfo.normal.ToString());
 
-            m_MoveDir.x = desiredMove.x*speed;
-            m_MoveDir.z = desiredMove.z*speed;
-
-
-            if (m_CharacterController.isGrounded)
+            if (m_Jump && m_CharacterController.collisionFlags != 0)
             {
-                m_MoveDir.y = -m_StickToGroundForce;
-
-                if (m_Jump)
+                if ((m_CharacterController.collisionFlags & CollisionFlags.Below) != 0)
                 {
                     m_MoveDir.y = m_JumpSpeed;
-                    PlayJumpSound();
-                    m_Jump = false;
-                    m_Jumping = true;
                 }
+                else if (m_CharacterController.collisionFlags == CollisionFlags.Sides)
+                {
+                    /*Debug.Log("Desired Move: " + desiredMove.ToString());
+                    Debug.Log("hitInfo Normal: " + hitInfo.normal.ToString());
+                    desiredMove = (desiredMove.normalized - hitInfo.normal * 2f).normalized;
+                    Debug.Log("Result: " + desiredMove.ToString());
+                    m_MoveDir.x = desiredMove.x * speed;
+                    m_MoveDir.z = desiredMove.z * speed;
+                    m_MoveDir.y = m_JumpSpeed * 0.5f;*/
+                    desiredMove = transform.forward.normalized;
+                    m_MoveDir.x = desiredMove.x * m_JumpSpeed;
+                    m_MoveDir.y = desiredMove.y * m_JumpSpeed;
+                    m_MoveDir.z = desiredMove.z * m_JumpSpeed;
+                }
+                PlayJumpSound();
+                m_Jump = false;
+                m_Jumping = true;
+            }
+            else if (m_CharacterController.isGrounded)
+            {
+                m_MoveDir.x = desiredMove.x * speed;
+                m_MoveDir.z = desiredMove.z * speed;
+                m_MoveDir.y = -m_StickToGroundForce;
+
             }
             else
             {
                 m_MoveDir += Physics.gravity*m_GravityMultiplier*Time.fixedDeltaTime;
             }
+            
             m_CollisionFlags = m_CharacterController.Move(m_MoveDir*Time.fixedDeltaTime);
+
+
+            if (m_IsWalking || m_Input.y <= 0 || (m_CollisionFlags & CollisionFlags.Sides) != 0)
+            {
+                m_RunSpeed = m_WalkSpeed * 2.0f;
+            }
+            else if (m_CharacterController.isGrounded && m_RunSpeed < m_MaxRunSpeed)
+            {
+                m_RunSpeed += Time.fixedDeltaTime;
+            }
 
             ProgressStepCycle(speed);
             UpdateCameraPosition(speed);
@@ -212,7 +241,7 @@ namespace UnityStandardAssets.Characters.FirstPerson
 #if !MOBILE_INPUT
             // On standalone builds, walk/run speed is modified by a key press.
             // keep track of whether or not the character is walking or running
-            m_IsWalking = !Input.GetKey(KeyCode.LeftShift);
+            m_IsWalking = Input.GetKey(KeyCode.LeftShift);
 #endif
             // set the desired speed to be walking or running
             speed = m_IsWalking ? m_WalkSpeed : m_RunSpeed;
